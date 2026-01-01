@@ -1,0 +1,242 @@
+#! /bin/sh
+# Download HaTTaH clients to given locations.
+#
+# HaTTaH clients are POSIX scripts that combine
+#  - an agreement,
+#  - a stable command line interface, and
+#  - a table of contents.
+#
+# Call with -n to validate syntax.
+# Call with -u to test parameter expansion.
+#
+# (C) 2026 Sage Lennon Gerard (~s)
+
+
+# The coding style uses quoted command names
+# to suppress alias substitution in untrusted
+# environments.
+#
+# Higher-level functions appear before
+# lower-level functions for the sake of
+# a pleasing reading order.
+#
+# ~s
+
+
+main() (
+  # Cause promised effect.
+  #
+  # The subshell makes unset commands unnecessary,
+  # and makes room to change the environment without
+  # disrupting users that apply the dot operator or
+  # Bash's source command to this file.
+  #
+  # ~s
+
+  \configure_environment              && \
+  \find_home                          && \
+  \print_latest_command > /tmp/hattah && \
+  \command read line    < /tmp/hattah || \return "$?"
+
+  if \command test -n "$line"
+  then \request_evaluation "$line"
+  else \blame_web_service
+       \return 1
+  fi
+)
+
+
+configure_environment() {
+  # Coerce Bash to use POSIX's definition of unset. ~s
+  POSIXLY_CORRECT=
+
+  # POSIX shells won't allow some of these as function
+  # names, but other shells would. Let's limit surprises.
+  #
+  # The set command allows clobbering /tmp/hattah (+C),
+  # and prevents halting on errors (+e).
+  #
+  # The && is due to my paranoia about the running shell's
+  # level of POSIX compliance.
+  #
+  # ~s
+
+  \unset -f break command export return set umask : && \
+  \set +Ce || \return "$?"
+
+  LC_ALL="${LC_ALL:-POSIX}"
+  \export LC_ALL
+  \umask 177
+}
+
+
+find_home() {
+  # Select a nonempty home directory name to
+  # support the default save location.
+  #
+  # ~s
+
+  HOME="${HOME:-"$(\command cd && \command pwd -P)"}"
+  \set -- "$?"
+  \command test "$1" -eq 0 || \return "$1"
+  \command test -d "$HOME" || \return "$?"
+}
+
+
+print_latest_command() {
+  \set -- "${HATTAH_ORIGIN:-https://hattah.top}"
+
+  if   \available curl
+  then \command curl --tlsv1.2 --silent "$1"
+  elif \available wget
+  then \command wget --quiet --output-document=- --secure-protocol=TLSv1_2 "$1"
+  else \blame_http_client_environment
+       \return 1
+  fi
+}
+
+
+request_evaluation() {
+  if   \confirm_evaluation "$1"
+  then \command eval "$1" > /tmp/hattah && \name_client
+  else \accept_refusal_to_evaluate
+  fi
+}
+
+
+move_client() {
+  if \command mv -i /tmp/hattah "$1"
+  then \command chmod 700 "$1"
+  else \set -- "$?"
+       \blame_mv_command
+       \return "$1"
+  fi
+}
+
+
+name_client() {
+  # Assume the date command is unavailable, and that commands like
+  # `</dev/urandom tr [:alnum:] | head -n 8' won't work.
+  # This limits dependence on ``mandatory'' POSIX utilities
+  # that aren't always built-in.
+  #
+  # ~s
+
+  \select_default_client_path
+
+  while   \:
+  do if   \prompt_for_client_path
+     then \move_client "${answer:-"$DEFAULT"}" && \break
+     else \blame_eof || \return "$?"
+          \return 1
+     fi
+  done
+}
+
+
+select_default_client_path() {
+  # Select first writable directory in PATH, or ~/hattah.
+  #
+  # ~s
+
+  \set -- "$IFS"
+  IFS=: DEFAULT=
+
+  for p in $PATH
+  do if \command test -d "$p" -a -w "$p"
+     then DEFAULT="$p"
+          \break
+     fi
+  done
+
+  IFS="$1" DEFAULT="${DEFAULT:-"$HOME"}/hattah"
+}
+
+
+# Isolate messages to the user to aid any future localization work with
+# LANG or LC_ALL. This Americentric default assumes LC_ALL=POSIX.
+#
+# ~s
+
+accept_refusal_to_evaluate() {
+  \say 'Understood. Call me again if you change your mind.\n'
+}
+
+
+prompt_for_client_path() {
+  \prompt 'Where would you like to save the client?\nLeave blank to use %s\n\n%s' "$DEFAULT" "${PS2:-> }"
+}
+
+
+confirm_evaluation() {
+  \confirm 'Evaluate '\`\`%s\'\''?\n\nOnly do this if you know and want the effect! [y/N]: ' "$1"
+}
+
+
+blame_mv_command() {
+\say \
+'Failed to move the client.
+
+Use a writable path, ideally where
+no directory entry already exists.
+'
+}
+
+
+blame_web_service() {
+\say \
+'The web service did not send a command.
+The service is not always available, so
+please try again later.
+'
+}
+
+
+blame_http_client_environment() {
+  \say \
+'Expected either a curl or a wget command.
+Neither is defined in this environment.
+'
+}
+
+
+blame_eof() {
+  \say 'Aborting on EOF. Leaving client stored at /tmp/hattah\n'
+}
+
+
+# Write supportive utilities below.
+# Limit dependence to built-in shell utilities
+# in the lowest-level functions.
+#
+# ~s
+
+confirm() {
+  \prompt "$@"
+
+  case "$answer" in
+  y|Y|yes|YES) \set -- 0 ;;
+            *) \set -- 1 ;;
+  esac
+
+  \unset -v answer
+  \return "$1"
+}
+
+
+prompt() {
+  \say "$@" && \command read -r answer
+}
+
+
+say() {
+  \command printf "$@" >&2
+}
+
+
+available() {
+  \command -v "$@" >/dev/null 2>&1
+}
+
+
+\main
